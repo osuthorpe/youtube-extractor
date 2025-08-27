@@ -40,30 +40,22 @@ class TranscriptManager:
         
         # Create filenames within the folder
         txt_filename = "transcript.txt"
+        timestamped_filename = "transcript_timestamped.txt"
         json_filename = "transcript.json"
         metadata_filename = "metadata.json"
         
         txt_path = video_folder / txt_filename
+        timestamped_path = video_folder / timestamped_filename
         json_path = video_folder / json_filename
         video_metadata_path = video_folder / metadata_filename
         
-        # Save plain text transcript
+        # Save plain text transcript (just the text, ready to copy/paste)
         with open(txt_path, 'w', encoding='utf-8') as f:
-            f.write(f"Title: {video_info['title']}\n")
-            f.write(f"URL: {url}\n")
-            f.write(f"Uploader: {video_info['uploader']}\n")
-            f.write(f"Duration: {video_info['duration']} seconds\n")
-            f.write(f"Transcribed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Language: {transcript_data.get('language', 'unknown')}\n")
-            f.write("=" * 80 + "\n\n")
-            f.write("TRANSCRIPT:\n\n")
             f.write(transcript_data['full_text'])
-            f.write("\n\n" + "=" * 80 + "\n\n")
-            
-            # Only include timestamps if enabled
-            include_timestamps = os.getenv('INCLUDE_TIMESTAMPS', 'true').lower() == 'true'
-            if include_timestamps and transcript_data.get('segments'):
-                f.write("TIMESTAMPED SEGMENTS:\n\n")
+        
+        # Save timestamped version if segments are available
+        if transcript_data.get('segments'):
+            with open(timestamped_path, 'w', encoding='utf-8') as f:
                 for segment in transcript_data['segments']:
                     f.write(segment + "\n")
         
@@ -88,6 +80,7 @@ class TranscriptManager:
             'language': transcript_data.get('language', 'unknown'),
             'files': {
                 'transcript_txt': txt_filename,
+                'transcript_timestamped': timestamped_filename if transcript_data.get('segments') else None,
                 'transcript_json': json_filename
             }
         }
