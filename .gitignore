@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environment variables
+.env
+
+# Transcripts folder - ignore contents but keep the folder
+transcripts/*
+!transcripts/.gitkeep
+
+# Temporary files
+*.tmp
+*.temp
+*.mp3
+*.wav
+*.m4a
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Whisper models cache
+~/.cache/whisper/
+
+# Test files
+test_folder_structure.py
+test_transcripts/
