@@ -10,11 +10,19 @@ load_dotenv()
 class YouTubeDownloader:
     def __init__(self, temp_dir=None):
         self.temp_dir = temp_dir or tempfile.gettempdir()
+        self.cookies_from_browser = os.getenv('COOKIES_FROM_BROWSER')
+        self.cookies_file = os.getenv('COOKIES_FILE')
         
     def download_audio(self, url):
         """Download audio from YouTube URL and return the path to the audio file."""
         # First extract info to get the title
-        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+        info_opts = {'quiet': True}
+        if self.cookies_from_browser:
+            info_opts['cookiesfrombrowser'] = (self.cookies_from_browser, None, None, None)
+        elif self.cookies_file:
+            info_opts['cookiefile'] = self.cookies_file
+            
+        with yt_dlp.YoutubeDL(info_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             title = info.get('title', 'video')
             # Clean filename for safety
@@ -37,6 +45,12 @@ class YouTubeDownloader:
             'no_warnings': not debug_mode,
         }
         
+        # Add cookie support
+        if self.cookies_from_browser:
+            ydl_opts['cookiesfrombrowser'] = (self.cookies_from_browser, None, None, None)
+        elif self.cookies_file:
+            ydl_opts['cookiefile'] = self.cookies_file
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             audio_file = os.path.join(self.temp_dir, f"{safe_title}.mp3")
@@ -49,6 +63,12 @@ class YouTubeDownloader:
             'quiet': True,
             'no_warnings': True,
         }
+        
+        # Add cookie support for metadata extraction
+        if self.cookies_from_browser:
+            ydl_opts['cookiesfrombrowser'] = (self.cookies_from_browser, None, None, None)
+        elif self.cookies_file:
+            ydl_opts['cookiefile'] = self.cookies_file
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
