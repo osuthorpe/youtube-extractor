@@ -13,6 +13,12 @@ VENV_PIP := $(VENV_BIN)/pip
 # Project files
 MAIN_FILE := main.py
 REQUIREMENTS := requirements.txt
+PY_SRCS := $(wildcard *.py)
+FORMAT_TARGETS := $(PY_SRCS) tests
+
+LINT_CMD := $(if $(wildcard $(VENV_BIN)/flake8),$(VENV_BIN)/flake8,flake8)
+FORMAT_CMD := $(if $(wildcard $(VENV_BIN)/black),$(VENV_BIN)/black,black)
+TEST_CMD := $(if $(wildcard $(VENV_BIN)/pytest),$(VENV_BIN)/pytest,pytest)
 
 .PHONY: help install install-dev venv clean run lint format test setup dev
 
@@ -71,22 +77,23 @@ clean:
 	find . -type f -name "*.pyc" -delete
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type d -name "*.egg-info" -exec rm -rf {} +
+	rm -rf .pytest_cache
 	@echo "Cleanup complete"
 
 # Code linting
 lint:
 	@echo "Running code linting..."
-	flake8 *.py --max-line-length=88 --ignore=E203,W503
+	$(LINT_CMD) --max-line-length=88 --ignore=E203,W503 $(PY_SRCS) tests
 
 # Code formatting
 format:
 	@echo "Formatting code..."
-	black *.py
+	$(FORMAT_CMD) $(FORMAT_TARGETS)
 
 # Run tests
 test:
 	@echo "Running tests..."
-	pytest -v
+	$(TEST_CMD) -v
 
 # Check if virtual environment exists
 check-venv:
