@@ -60,6 +60,11 @@ After setup, try running the extractor with a YouTube URL that previously failed
 
 ## Troubleshooting
 
+- **Public videos reported as "Private video"**: This is almost always caused by an
+  outdated yt-dlp or YouTube bot-gating the default client. First run
+  `pip install -U yt-dlp`. The extractor already prefers non-gated player clients;
+  you can tune them with `YOUTUBE_PLAYER_CLIENTS` in `.env` (e.g.
+  `tv,web_safari,mweb,android_vr`) or set it to `default` to use yt-dlp's defaults.
 - **"Sign in to confirm you're not a bot"**: Your cookies are invalid or expired
 - **Browser locked database**: Close your browser completely before running
 - **Permission errors**: Check that the cookies file path is readable
