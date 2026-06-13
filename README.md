@@ -76,7 +76,7 @@ The app reads environment variables from a `.env` file if present. Useful option
 | --- | --- | --- |
 | `TEMP_DIR` | System temp | Directory for intermediate audio files |
 | `TRANSCRIPTS_DIR` | `transcripts` | Destination folder for transcript archives |
-| `WHISPER_MODEL` | `large` | Default Whisper model loaded on startup |
+| `WHISPER_MODEL` | `small` | Default Whisper model loaded on startup |
 | `INCLUDE_TIMESTAMPS` | `true` | Set to `false` to skip timestamped transcript output |
 | `DEFAULT_LANGUAGE` | `en` | Force a transcription language (set to `none` for auto-detect) |
 | `USE_GPU` | `true` | Disable to force CPU inference even if CUDA is available |
@@ -87,14 +87,14 @@ The app reads environment variables from a `.env` file if present. Useful option
 
 - **tiny**: Fastest, lowest quality (39M)
 - **base**: Good balance (74M)
-- **small**: Better quality (244M)
+- **small**: Better quality (244M) - Default
 - **medium**: High quality (769M)
-- **large**: Best quality, slowest (1550M) - Default
+- **large**: Best quality, slowest (1550M)
 
-The `large` model is the default because it produces noticeably better
-transcripts, especially on long videos. It is slow on CPU and downloads
-~1.5GB on first use; switch to a smaller model via `settings`, `--model`, or
-`WHISPER_MODEL` if you need faster turnaround.
+The `small` model is the default: a good balance of quality and footprint that
+runs comfortably even on machines without a GPU (and on 8GB Apple Silicon
+Macs). For higher accuracy on long videos, switch to `medium` or `large` via
+`settings`, `--model`, or `WHISPER_MODEL` — at the cost of speed and memory.
 
 ## Output
 
@@ -112,7 +112,7 @@ Transcripts are saved in the `transcripts/` folder as:
 
 ## Notes
 
-- First run will download the Whisper model (~1.5GB for the default large model)
+- First run will download the Whisper model (~244MB for the default small model)
 - Transcription speed depends on video length and hardware
 - Longer videos (>1 hour) may take significant time on CPU
 

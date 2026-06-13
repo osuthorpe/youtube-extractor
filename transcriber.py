@@ -5,13 +5,14 @@ import whisper
 
 
 class WhisperTranscriber:
-    def __init__(self, model_size="large"):
+    def __init__(self, model_size="small"):
         """Initialize a Whisper model.
 
         Model sizes: tiny, base, small, medium, large
 
-        Uses the full openai-whisper implementation, which gives the best
-        transcription quality (especially on long videos).
+        Uses the full openai-whisper implementation. The default is "small",
+        a good quality/footprint balance; bump to "medium" or "large" for
+        higher accuracy on long videos.
         """
         self.model_size = model_size
 
