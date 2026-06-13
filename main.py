@@ -28,7 +28,7 @@ class YouTubeTranscriptExtractor:
         transcripts_dir = os.getenv("TRANSCRIPTS_DIR", "transcripts")
         self.transcript_manager = TranscriptManager(output_dir=transcripts_dir)
 
-        self.whisper_model = os.getenv("WHISPER_MODEL", "base")
+        self.whisper_model = os.getenv("WHISPER_MODEL", "large")
         self.max_duration = int(os.getenv("MAX_VIDEO_DURATION", "10800"))
         self.include_timestamps = (
             os.getenv("INCLUDE_TIMESTAMPS", "true").lower() == "true"
