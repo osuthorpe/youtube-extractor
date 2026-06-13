@@ -77,14 +77,14 @@ After transcribing, the tool can distill the transcript into a short list of
 sponsor reads, self-promotion, greetings, and filler. This is ideal for
 hour-long podcasts where you just want "the meat."
 
-Summaries are generated with the [Claude API](https://www.anthropic.com/api)
-(`claude-opus-4-8` by default) and saved as `summary.md` next to the transcript.
+Summaries are generated with the [OpenAI API](https://platform.openai.com)
+(`gpt-5.5` by default) and saved as `summary.md` next to the transcript.
 This step is **on by default but only runs when an API key is configured** — set
-`ANTHROPIC_API_KEY` (see `.env.example`). Without a key, transcription proceeds
+`OPENAI_API_KEY` (see `.env.example`). Without a key, transcription proceeds
 normally and the summary step is skipped with a notice.
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
 python main.py "https://youtu.be/VIDEO_ID"        # transcribe + summarize
 python main.py "https://youtu.be/VIDEO_ID" --no-summarize   # transcribe only
 ```
@@ -107,8 +107,8 @@ The app reads environment variables from a `.env` file if present. Useful option
 | `MAX_VIDEO_DURATION` | `10800` | Duration limit in seconds; longer videos prompt for confirmation (interactive) or are skipped (batch) |
 | `AUDIO_QUALITY` | `192` | Target audio bitrate (kbps) for the extracted MP3 |
 | `SUMMARIZE` | `true` | Generate the actionable-points summary (only runs when an API key is set) |
-| `ANTHROPIC_API_KEY` | — | Anthropic API key, required for summaries |
-| `SUMMARY_MODEL` | `claude-opus-4-8` | Claude model used for summaries |
+| `OPENAI_API_KEY` | — | OpenAI API key, required for summaries |
+| `SUMMARY_MODEL` | `gpt-5.5` | OpenAI model used for summaries |
 
 ## Whisper Models
 

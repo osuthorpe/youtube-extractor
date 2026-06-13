@@ -1,7 +1,7 @@
 import os
 
 # Default model for summarization. Override with the SUMMARY_MODEL env var.
-DEFAULT_SUMMARY_MODEL = "claude-opus-4-8"
+DEFAULT_SUMMARY_MODEL = "gpt-5.5"
 
 SYSTEM_PROMPT = """You extract the actionable substance from video and podcast \
 transcripts.
@@ -28,21 +28,24 @@ editorialize.
 
 
 def has_credentials():
-    """Return True if Anthropic API credentials are available in the environment."""
-    return bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"))
+    """Return True if an OpenAI API key is available in the environment."""
+    return bool(os.getenv("OPENAI_API_KEY"))
 
 
 def build_messages(transcript_text, title=None):
-    """Build the (system, messages) pair sent to the Claude API."""
+    """Build the chat messages sent to the OpenAI API."""
     if title:
         user_content = f"Title: {title}\n\nTranscript:\n{transcript_text}"
     else:
         user_content = f"Transcript:\n{transcript_text}"
-    return SYSTEM_PROMPT, [{"role": "user", "content": user_content}]
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
 
 
 class TranscriptSummarizer:
-    """Turns a raw transcript into a list of actionable bullet points via Claude."""
+    """Turns a raw transcript into a list of actionable bullet points via GPT-5.5."""
 
     def __init__(self, model=None):
         self.model = model or os.getenv("SUMMARY_MODEL", DEFAULT_SUMMARY_MODEL)
@@ -51,14 +54,14 @@ class TranscriptSummarizer:
     def _get_client(self):
         if self._client is None:
             try:
-                import anthropic
+                from openai import OpenAI
             except ImportError as error:
                 raise RuntimeError(
-                    "Summarization needs the 'anthropic' package. Install it with: "
-                    "pip install anthropic"
+                    "Summarization needs the 'openai' package. Install it with: "
+                    "pip install openai"
                 ) from error
-            # Resolves ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN from the environment.
-            self._client = anthropic.Anthropic()
+            # Resolves OPENAI_API_KEY from the environment.
+            self._client = OpenAI()
         return self._client
 
     def summarize(self, transcript_text, title=None, on_text=None):
@@ -72,29 +75,21 @@ class TranscriptSummarizer:
             raise ValueError("Cannot summarize an empty transcript.")
 
         client = self._get_client()
-        system, messages = build_messages(transcript_text, title)
+        messages = build_messages(transcript_text, title)
 
         chunks = []
-        with client.messages.stream(
+        stream = client.chat.completions.create(
             model=self.model,
-            max_tokens=8000,
-            thinking={"type": "adaptive"},
-            system=system,
             messages=messages,
-        ) as stream:
-            for text in stream.text_stream:
-                chunks.append(text)
+            stream=True,
+        )
+        for event in stream:
+            if not getattr(event, "choices", None):
+                continue
+            piece = getattr(event.choices[0].delta, "content", None)
+            if piece:
+                chunks.append(piece)
                 if on_text:
-                    on_text(text)
-            final_message = stream.get_final_message()
+                    on_text(piece)
 
-        if final_message.stop_reason == "refusal":
-            raise RuntimeError("The model declined to summarize this transcript.")
-
-        # Prefer the assembled stream text; fall back to the final message blocks.
-        text = "".join(chunks).strip()
-        if not text:
-            text = "".join(
-                block.text for block in final_message.content if block.type == "text"
-            ).strip()
-        return text
+        return "".join(chunks).strip()

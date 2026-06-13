@@ -36,8 +36,8 @@ class YouTubeTranscriptExtractor:
         )
         self.debug_mode = os.getenv("DEBUG_MODE", "false").lower() == "true"
 
-        # Summarization (actionable bullet points via Claude) is opt-out, but only
-        # actually runs when Anthropic credentials are present.
+        # Summarization (actionable bullet points via GPT-5.5) is opt-out, but only
+        # actually runs when an OpenAI API key is present.
         self.summarize = os.getenv("SUMMARIZE", "true").lower() == "true"
         self.summarizer = TranscriptSummarizer()
 
@@ -144,7 +144,7 @@ class YouTubeTranscriptExtractor:
         """Generate actionable bullet points and save them as summary.md."""
         if not has_credentials():
             self.ui.print_info(
-                "Skipping summary: set ANTHROPIC_API_KEY to get actionable bullet "
+                "Skipping summary: set OPENAI_API_KEY to get actionable bullet "
                 "points (or SUMMARIZE=false to silence this)."
             )
             return None
@@ -396,7 +396,7 @@ def _parse_args(argv=None):
         action="store_true",
         default=None,
         help="Summarize transcripts into actionable bullet points (needs "
-        "ANTHROPIC_API_KEY).",
+        "OPENAI_API_KEY).",
     )
     summary_group.add_argument(
         "--no-summarize",
