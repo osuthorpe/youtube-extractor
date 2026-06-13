@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from youtube_downloader import YouTubeDownloader, extract_video_id
 from transcriber import WhisperTranscriber
 from transcript_manager import TranscriptManager
+from summarizer import TranscriptSummarizer, has_credentials
 from ui import TerminalUI
 
 # Load environment variables once, at startup.
@@ -34,6 +35,11 @@ class YouTubeTranscriptExtractor:
             os.getenv("INCLUDE_TIMESTAMPS", "true").lower() == "true"
         )
         self.debug_mode = os.getenv("DEBUG_MODE", "false").lower() == "true"
+
+        # Summarization (actionable bullet points via Claude) is opt-out, but only
+        # actually runs when Anthropic credentials are present.
+        self.summarize = os.getenv("SUMMARIZE", "true").lower() == "true"
+        self.summarizer = TranscriptSummarizer()
 
         self.transcriber = None
         self._init_transcriber()
@@ -108,6 +114,14 @@ class YouTubeTranscriptExtractor:
 
             self.ui.print_success(f"Transcript saved to folder: {video_folder}")
 
+            # Distill the transcript into actionable bullet points.
+            if self.summarize:
+                self._summarize_to_folder(
+                    formatted_transcript["full_text"],
+                    video_folder,
+                    title=video_info.get("title"),
+                )
+
             # Show preview
             self._print_preview(formatted_transcript["full_text"])
 
@@ -125,6 +139,37 @@ class YouTubeTranscriptExtractor:
                         self.ui.print_warning(
                             "Temporary audio file could not be removed; continuing."
                         )
+
+    def _summarize_to_folder(self, transcript_text, video_folder, title=None):
+        """Generate actionable bullet points and save them as summary.md."""
+        if not has_credentials():
+            self.ui.print_info(
+                "Skipping summary: set ANTHROPIC_API_KEY to get actionable bullet "
+                "points (or SUMMARIZE=false to silence this)."
+            )
+            return None
+
+        self.ui.print_progress("Summarizing transcript into actionable points...")
+        print("\n" + "=" * 60)
+        print("ACTIONABLE POINTS:")
+        print("=" * 60)
+        try:
+            summary = self.summarizer.summarize(
+                transcript_text,
+                title=title,
+                on_text=lambda chunk: print(chunk, end="", flush=True),
+            )
+            print("\n" + "=" * 60 + "\n")
+        except Exception as e:
+            print()
+            self.ui.print_error(f"Could not summarize transcript: {e}")
+            if self.debug_mode:
+                raise
+            return None
+
+        summary_path = self.transcript_manager.save_summary(video_folder, summary)
+        self.ui.print_success(f"Summary saved to: {summary_path}")
+        return summary_path
 
     def _print_preview(self, full_text, limit=500):
         """Print a short preview of the transcript text."""
@@ -205,6 +250,31 @@ class YouTubeTranscriptExtractor:
         print(path.read_text(encoding="utf-8"))
         print("=" * 80 + "\n")
 
+    def summarize_transcript(self, index):
+        """Generate (or regenerate) a summary for a saved transcript by position."""
+        transcripts = self.transcript_manager.list_transcripts()
+        if not transcripts:
+            self.ui.print_info("No transcripts saved yet.")
+            return
+
+        if index < 1 or index > len(transcripts):
+            self.ui.print_error(
+                f"No transcript #{index}. Use 'list' to see valid numbers (1-"
+                f"{len(transcripts)})."
+            )
+            return
+
+        entry = transcripts[index - 1]
+        path = self.transcript_manager.get_transcript_path(entry["id"])
+        folder = self.transcript_manager.get_video_folder(entry["id"])
+        if not path or not path.exists():
+            self.ui.print_error(f"Transcript file not found: {path}")
+            return
+
+        self._summarize_to_folder(
+            path.read_text(encoding="utf-8"), folder, title=entry["title"]
+        )
+
     def _handle_command(self, user_input):
         """Dispatch a single line of REPL input. Returns False to quit."""
         command = user_input.lower()
@@ -222,6 +292,12 @@ class YouTubeTranscriptExtractor:
                 self.view_transcript(int(parts[1].strip()))
             else:
                 self.ui.print_error("Usage: view <number> (see 'list').")
+        elif command.startswith("summarize"):
+            parts = user_input.split(maxsplit=1)
+            if len(parts) == 2 and parts[1].strip().isdigit():
+                self.summarize_transcript(int(parts[1].strip()))
+            else:
+                self.ui.print_error("Usage: summarize <number> (see 'list').")
         elif command == "clear":
             self.ui.clear_screen()
             self.ui.print_header()
@@ -313,6 +389,21 @@ def _parse_args(argv=None):
         action="store_true",
         help="Transcribe even if a video exceeds MAX_VIDEO_DURATION.",
     )
+    summary_group = parser.add_mutually_exclusive_group()
+    summary_group.add_argument(
+        "--summarize",
+        dest="summarize",
+        action="store_true",
+        default=None,
+        help="Summarize transcripts into actionable bullet points (needs "
+        "ANTHROPIC_API_KEY).",
+    )
+    summary_group.add_argument(
+        "--no-summarize",
+        dest="summarize",
+        action="store_false",
+        help="Skip the actionable-points summary.",
+    )
     return parser.parse_args(argv)
 
 
@@ -326,6 +417,8 @@ def main(argv=None):
         os.environ["WHISPER_MODEL"] = args.model
     if args.no_timestamps:
         os.environ["INCLUDE_TIMESTAMPS"] = "false"
+    if args.summarize is not None:
+        os.environ["SUMMARIZE"] = "true" if args.summarize else "false"
 
     interactive = not args.urls
     app = YouTubeTranscriptExtractor(interactive=interactive)

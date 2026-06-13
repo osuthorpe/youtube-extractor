@@ -166,3 +166,10 @@ class TranscriptManager:
         if transcript_id in self.metadata:
             return self.output_dir / self.metadata[transcript_id]["folder"]
         return None
+
+    def save_summary(self, video_folder, summary_text):
+        """Write a summary alongside the transcript and return its path."""
+        summary_path = Path(video_folder) / "summary.md"
+        with open(summary_path, "w", encoding="utf-8") as f:
+            f.write(summary_text.rstrip() + "\n")
+        return summary_path

@@ -28,6 +28,7 @@ class TerminalUI:
         print("  • Type 'settings' to change Whisper model")
         print("  • Type 'list' to view saved transcripts")
         print("  • Type 'view <n>' to print a saved transcript")
+        print("  • Type 'summarize <n>' for a saved transcript's actionable points")
         print("  • Type 'quit' or 'exit' to close")
         print()
 

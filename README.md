@@ -47,6 +47,7 @@ Once running, you can:
 - Type `settings` to change Whisper model size
 - Type `list` to view saved transcripts
 - Type `view <n>` to print a saved transcript
+- Type `summarize <n>` to extract the actionable points from a saved transcript
 - Type `quit` to exit
 
 ### Non-interactive / batch mode
@@ -63,10 +64,33 @@ python main.py URL1 URL2 URL3 --model small --no-timestamps
 | --- | --- |
 | `-m`, `--model` | Whisper model to use (overrides `WHISPER_MODEL`) |
 | `--no-timestamps` | Skip the timestamped transcript output |
+| `--summarize` / `--no-summarize` | Force on/off the actionable-points summary |
 | `--force` | Transcribe even if a video exceeds `MAX_VIDEO_DURATION` |
 
 In batch mode, videos longer than `MAX_VIDEO_DURATION` are skipped unless
 `--force` is given; in interactive mode you'll be prompted to confirm.
+
+### Actionable summaries
+
+After transcribing, the tool can distill the transcript into a short list of
+**actionable bullet points** — the practical takeaways — while stripping out
+sponsor reads, self-promotion, greetings, and filler. This is ideal for
+hour-long podcasts where you just want "the meat."
+
+Summaries are generated with the [Claude API](https://www.anthropic.com/api)
+(`claude-opus-4-8` by default) and saved as `summary.md` next to the transcript.
+This step is **on by default but only runs when an API key is configured** — set
+`ANTHROPIC_API_KEY` (see `.env.example`). Without a key, transcription proceeds
+normally and the summary step is skipped with a notice.
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+python main.py "https://youtu.be/VIDEO_ID"        # transcribe + summarize
+python main.py "https://youtu.be/VIDEO_ID" --no-summarize   # transcribe only
+```
+
+You can also summarize an already-saved transcript from the interactive prompt
+with `summarize <n>` (numbers come from `list`).
 
 ### Configuration
 
@@ -82,6 +106,9 @@ The app reads environment variables from a `.env` file if present. Useful option
 | `USE_GPU` | `true` | Disable to force CPU inference even if CUDA is available |
 | `MAX_VIDEO_DURATION` | `10800` | Duration limit in seconds; longer videos prompt for confirmation (interactive) or are skipped (batch) |
 | `AUDIO_QUALITY` | `192` | Target audio bitrate (kbps) for the extracted MP3 |
+| `SUMMARIZE` | `true` | Generate the actionable-points summary (only runs when an API key is set) |
+| `ANTHROPIC_API_KEY` | — | Anthropic API key, required for summaries |
+| `SUMMARY_MODEL` | `claude-opus-4-8` | Claude model used for summaries |
 
 ## Whisper Models
 
@@ -102,6 +129,7 @@ Transcripts are saved in the `transcripts/` folder as:
 - `.txt` files with full transcript and timestamps
 - `.json` files with structured data
 - `.txt` files without timestamps when `INCLUDE_TIMESTAMPS=false`
+- `summary.md` with the actionable bullet points (when summarization is enabled)
 
 ## Requirements
 
