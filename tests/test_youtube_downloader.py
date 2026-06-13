@@ -1,7 +1,77 @@
 import yt_dlp
 import pytest
 
-from youtube_downloader import YouTubeDownloader, DEFAULT_PLAYER_CLIENTS
+from youtube_downloader import (
+    YouTubeDownloader,
+    DEFAULT_PLAYER_CLIENTS,
+    extract_video_id,
+)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "http://youtube.com/watch?v=dQw4w9WgXcQ&t=10s",
+        "https://youtu.be/dQw4w9WgXcQ",
+        "https://m.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+        "https://www.youtube.com/embed/dQw4w9WgXcQ",
+        "youtu.be/dQw4w9WgXcQ",
+    ],
+)
+def test_extract_video_id_accepts_valid_urls(url):
+    assert extract_video_id(url) == "dQw4w9WgXcQ"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "",
+        None,
+        "https://www.youtube.com/",
+        "https://example.com/watch?v=dQw4w9WgXcQ",
+        "not a url",
+        "https://youtu.be/short",
+    ],
+)
+def test_extract_video_id_rejects_invalid_urls(url):
+    assert extract_video_id(url) is None
+
+
+def test_download_audio_uses_reported_filepath(monkeypatch, tmp_path):
+    downloader = YouTubeDownloader(temp_dir=str(tmp_path))
+    expected = str(tmp_path / "abc123.mp3")
+
+    def fake_extract(self, url, download=False, opts=None):
+        assert download is True
+        return {
+            "id": "abc123",
+            "title": "Example",
+            "duration": 10,
+            "uploader": "Chan",
+            "requested_downloads": [{"filepath": expected}],
+        }
+
+    monkeypatch.setattr(YouTubeDownloader, "_extract", fake_extract)
+
+    audio_file, info = downloader.download_audio("https://youtu.be/abc12345678")
+
+    assert audio_file == expected
+    assert info["id"] == "abc123"
+
+
+def test_download_audio_falls_back_to_id(monkeypatch, tmp_path):
+    downloader = YouTubeDownloader(temp_dir=str(tmp_path))
+
+    def fake_extract(self, url, download=False, opts=None):
+        return {"id": "xyz789", "title": "Example", "duration": 10}
+
+    monkeypatch.setattr(YouTubeDownloader, "_extract", fake_extract)
+
+    audio_file, _ = downloader.download_audio("https://youtu.be/xyz789aaaaa")
+
+    assert audio_file == str(tmp_path / "xyz789.mp3")
 
 
 def test_base_opts_sets_default_player_clients(monkeypatch):

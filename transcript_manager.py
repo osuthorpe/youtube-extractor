@@ -3,10 +3,7 @@ from datetime import datetime
 from pathlib import Path
 import uuid
 import logging
-from dotenv import load_dotenv
 from json import JSONDecodeError
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +41,6 @@ class TranscriptManager:
                     error,
                 )
             return {}
-        return {}
 
     def _save_metadata(self):
         """Save metadata to file."""

@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
 
+import argparse
 import os
 import sys
 import tempfile
-import re
+
 from dotenv import load_dotenv
 
-from youtube_downloader import YouTubeDownloader
+from youtube_downloader import YouTubeDownloader, extract_video_id
 from transcriber import WhisperTranscriber
 from transcript_manager import TranscriptManager
 from ui import TerminalUI
 
-# Load environment variables
+# Load environment variables once, at startup.
 load_dotenv()
 
 
 class YouTubeTranscriptExtractor:
-    def __init__(self):
-        self.ui = TerminalUI()
+    def __init__(self, interactive=True):
+        self.interactive = interactive
+        self.ui = TerminalUI(clear=interactive)
 
         # Load config from environment variables
         temp_dir = os.getenv("TEMP_DIR", tempfile.gettempdir())
@@ -47,31 +49,42 @@ class YouTubeTranscriptExtractor:
             sys.exit(1)
 
     def is_youtube_url(self, url):
-        """Check if the provided string is a valid YouTube URL."""
-        youtube_patterns = [
-            r"(https?://)?(www\.)?(youtube\.com|youtu\.be)/",
-            r"(https?://)?(www\.)?(m\.youtube\.com)/",
-        ]
-        return any(re.match(pattern, url) for pattern in youtube_patterns)
+        """Check if the provided string is a valid YouTube video URL."""
+        return extract_video_id(url) is not None
 
-    def process_url(self, url):
+    def _allow_long_video(self, duration):
+        """Decide whether to proceed when a video exceeds the duration limit."""
+        if duration <= self.max_duration:
+            return True
+
+        hours = self.max_duration / 3600
+        self.ui.print_warning(
+            f"Video is longer than the {hours:.1f}h limit "
+            f"(MAX_VIDEO_DURATION={self.max_duration}s)."
+        )
+        if not self.interactive:
+            self.ui.print_warning(
+                "Skipping. Use --force or raise MAX_VIDEO_DURATION to transcribe it."
+            )
+            return False
+        return self.ui.confirm("Transcribe it anyway?")
+
+    def process_url(self, url, force=False):
         """Process a YouTube URL: download, transcribe, and save."""
+        audio_file = None
         try:
-            # Get video info
+            # Get video info (single metadata fetch used for display + limit check)
             self.ui.print_progress("Fetching video information...")
             video_info = self.downloader.get_video_info(url)
             self.ui.print_video_info(video_info)
 
-            # Check duration
-            if video_info["duration"] > self.max_duration:
-                hours = self.max_duration // 3600
-                self.ui.print_warning(
-                    f"Video is longer than {hours} hours. This may take a while..."
-                )
+            # Enforce the duration limit before spending time on a download.
+            if not force and not self._allow_long_video(video_info["duration"]):
+                return
 
-            # Download audio
+            # Download audio (this is the second and final metadata fetch).
             self.ui.print_progress("Downloading audio from YouTube...")
-            audio_file, safe_title, full_info = self.downloader.download_audio(url)
+            audio_file, video_info = self.downloader.download_audio(url)
             self.ui.print_success("Audio downloaded successfully!")
 
             # Transcribe
@@ -89,35 +102,38 @@ class YouTubeTranscriptExtractor:
 
             # Save transcript
             self.ui.print_progress("Saving transcript...")
-            txt_path, json_path, video_folder = self.transcript_manager.save_transcript(
+            _, _, video_folder = self.transcript_manager.save_transcript(
                 video_info, formatted_transcript, url
             )
 
             self.ui.print_success(f"Transcript saved to folder: {video_folder}")
 
-            # Clean up temp audio file
-            try:
-                os.remove(audio_file)
-            except OSError:
-                if self.debug_mode:
-                    self.ui.print_warning(
-                        "Temporary audio file could not be removed; continuing."
-                    )
-
             # Show preview
-            print("\n" + "=" * 60)
-            print("TRANSCRIPT PREVIEW (first 500 characters):")
-            print("=" * 60)
-            preview = formatted_transcript["full_text"][:500]
-            print(
-                preview + "..."
-                if len(formatted_transcript["full_text"]) > 500
-                else preview
-            )
-            print("=" * 60 + "\n")
+            self._print_preview(formatted_transcript["full_text"])
 
         except Exception as e:
             self.ui.print_error(f"Error processing URL: {e}")
+            if self.debug_mode:
+                raise
+        finally:
+            # Always clean up the temp audio file, even on failure.
+            if audio_file and os.path.exists(audio_file):
+                try:
+                    os.remove(audio_file)
+                except OSError:
+                    if self.debug_mode:
+                        self.ui.print_warning(
+                            "Temporary audio file could not be removed; continuing."
+                        )
+
+    def _print_preview(self, full_text, limit=500):
+        """Print a short preview of the transcript text."""
+        print("\n" + "=" * 60)
+        print(f"TRANSCRIPT PREVIEW (first {limit} characters):")
+        print("=" * 60)
+        preview = full_text[:limit]
+        print(preview + "..." if len(full_text) > limit else preview)
+        print("=" * 60 + "\n")
 
     def show_settings(self):
         """Show and handle settings menu."""
@@ -163,60 +179,101 @@ class YouTubeTranscriptExtractor:
 
         print("=" * 80 + "\n")
 
+    def view_transcript(self, index):
+        """Print the full text of a saved transcript by its list position."""
+        transcripts = self.transcript_manager.list_transcripts()
+        if not transcripts:
+            self.ui.print_info("No transcripts saved yet.")
+            return
+
+        if index < 1 or index > len(transcripts):
+            self.ui.print_error(
+                f"No transcript #{index}. Use 'list' to see valid numbers (1-"
+                f"{len(transcripts)})."
+            )
+            return
+
+        entry = transcripts[index - 1]
+        path = self.transcript_manager.get_transcript_path(entry["id"])
+        if not path or not path.exists():
+            self.ui.print_error(f"Transcript file not found: {path}")
+            return
+
+        print("\n" + "=" * 80)
+        print(f"{entry['title']}")
+        print("=" * 80)
+        print(path.read_text(encoding="utf-8"))
+        print("=" * 80 + "\n")
+
+    def _handle_command(self, user_input):
+        """Dispatch a single line of REPL input. Returns False to quit."""
+        command = user_input.lower()
+
+        if command in ("quit", "exit", "q"):
+            self.ui.print_info("Goodbye!")
+            return False
+        elif command == "settings":
+            self.show_settings()
+        elif command == "list":
+            self.list_transcripts()
+        elif command.startswith("view"):
+            parts = user_input.split(maxsplit=1)
+            if len(parts) == 2 and parts[1].strip().isdigit():
+                self.view_transcript(int(parts[1].strip()))
+            else:
+                self.ui.print_error("Usage: view <number> (see 'list').")
+        elif command == "clear":
+            self.ui.clear_screen()
+            self.ui.print_header()
+            self.ui.print_menu()
+        elif command == "help":
+            self.ui.print_menu()
+        elif self.is_youtube_url(user_input):
+            self.process_url(user_input)
+        else:
+            self.ui.print_error(
+                "Invalid input. Please enter a valid YouTube URL or command."
+            )
+            self.ui.print_info("Type 'help' to see available commands.")
+        return True
+
     def run(self):
-        """Main application loop."""
+        """Main interactive application loop."""
         self.ui.print_header()
         self.ui.print_menu()
 
         while True:
             try:
                 user_input = self.ui.get_input()
-
                 if not user_input:
                     continue
-
-                # Handle commands
-                if user_input.lower() in ["quit", "exit", "q"]:
-                    self.ui.print_info("Goodbye!")
+                if not self._handle_command(user_input):
                     break
-
-                elif user_input.lower() == "settings":
-                    self.show_settings()
-
-                elif user_input.lower() == "list":
-                    self.list_transcripts()
-
-                elif user_input.lower() == "clear":
-                    self.ui.clear_screen()
-                    self.ui.print_header()
-                    self.ui.print_menu()
-
-                elif user_input.lower() == "help":
-                    self.ui.print_menu()
-
-                # Handle YouTube URL
-                elif self.is_youtube_url(user_input):
-                    self.process_url(user_input)
-
-                else:
-                    self.ui.print_error(
-                        "Invalid input. Please enter a valid YouTube URL or command."
-                    )
-                    self.ui.print_info("Type 'help' to see available commands.")
-
             except KeyboardInterrupt:
                 print("\n")
                 self.ui.print_info("Use 'quit' to exit properly.")
             except Exception as e:
                 self.ui.print_error(f"Unexpected error: {e}")
+                if self.debug_mode:
+                    raise
+
+    def run_batch(self, urls, force=False):
+        """Transcribe one or more URLs non-interactively. Returns exit code."""
+        failures = 0
+        for url in urls:
+            if not self.is_youtube_url(url):
+                self.ui.print_error(f"Not a valid YouTube URL: {url}")
+                failures += 1
+                continue
+            self.process_url(url, force=force)
+        return 1 if failures else 0
 
 
-def main():
-    """Entry point."""
-    # Check dependencies
+def _check_dependencies():
+    """Ensure required third-party packages are importable."""
+    import importlib
+
     try:
-        import importlib
-
         for dependency in ("yt_dlp", "whisper", "torch"):
             importlib.import_module(dependency)
     except ImportError as e:
@@ -229,9 +286,55 @@ def main():
         print("  Windows: Download from https://ffmpeg.org")
         sys.exit(1)
 
-    app = YouTubeTranscriptExtractor()
-    app.run()
+
+def _parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Download and transcribe YouTube videos with OpenAI Whisper.",
+    )
+    parser.add_argument(
+        "urls",
+        nargs="*",
+        help="One or more YouTube URLs to transcribe. If omitted, an interactive "
+        "session starts.",
+    )
+    parser.add_argument(
+        "-m",
+        "--model",
+        help="Whisper model to use (tiny, base, small, medium, large). "
+        "Overrides WHISPER_MODEL.",
+    )
+    parser.add_argument(
+        "--no-timestamps",
+        action="store_true",
+        help="Skip the timestamped transcript output.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Transcribe even if a video exceeds MAX_VIDEO_DURATION.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    """Entry point."""
+    _check_dependencies()
+    args = _parse_args(argv)
+
+    # CLI flags take precedence over environment defaults.
+    if args.model:
+        os.environ["WHISPER_MODEL"] = args.model
+    if args.no_timestamps:
+        os.environ["INCLUDE_TIMESTAMPS"] = "false"
+
+    interactive = not args.urls
+    app = YouTubeTranscriptExtractor(interactive=interactive)
+
+    if interactive:
+        app.run()
+        return 0
+    return app.run_batch(args.urls, force=args.force)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

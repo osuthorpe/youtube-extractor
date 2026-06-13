@@ -3,9 +3,10 @@ import os
 
 
 class TerminalUI:
-    def __init__(self):
+    def __init__(self, clear=True):
         init(autoreset=True)
-        self.clear_screen()
+        if clear:
+            self.clear_screen()
 
     def clear_screen(self):
         """Clear the terminal screen."""
@@ -13,17 +14,12 @@ class TerminalUI:
 
     def print_header(self):
         """Print application header."""
-        print(
-            Fore.CYAN
-            + Style.BRIGHT
-            + """
+        print(Fore.CYAN + Style.BRIGHT + """
 ╔══════════════════════════════════════════════════════════════╗
 ║             YouTube Transcript Extractor                     ║
 ║                Powered by OpenAI Whisper                     ║
 ╚══════════════════════════════════════════════════════════════╝
-        """
-            + Style.RESET_ALL
-        )
+        """ + Style.RESET_ALL)
 
     def print_menu(self):
         """Print main menu."""
@@ -31,6 +27,7 @@ class TerminalUI:
         print("  • Paste a YouTube URL to transcribe")
         print("  • Type 'settings' to change Whisper model")
         print("  • Type 'list' to view saved transcripts")
+        print("  • Type 'view <n>' to print a saved transcript")
         print("  • Type 'quit' or 'exit' to close")
         print()
 
@@ -98,3 +95,10 @@ class TerminalUI:
     def get_settings_choice(self):
         """Get settings choice from user."""
         return input(Fore.GREEN + "Select model (0-5): " + Style.RESET_ALL).strip()
+
+    def confirm(self, message):
+        """Ask a yes/no question; returns True only for an explicit yes."""
+        answer = (
+            input(Fore.YELLOW + f"{message} [y/N]: " + Style.RESET_ALL).strip().lower()
+        )
+        return answer in ("y", "yes")

@@ -1,9 +1,9 @@
-import yt_dlp
 import os
+import re
+import sys
 import tempfile
-from dotenv import load_dotenv
 
-load_dotenv()
+import yt_dlp
 
 # Default YouTube player clients used for extraction.
 #
@@ -14,6 +14,30 @@ load_dotenv()
 # or set it to "default" to fall back to yt-dlp's built-in selection.
 DEFAULT_PLAYER_CLIENTS = "tv,web_safari,mweb,android_vr"
 
+# Matches the common YouTube URL shapes and captures the 11-character video id.
+_YOUTUBE_URL_RE = re.compile(r"""(?x)
+    ^(?:https?://)?
+    (?:www\.|m\.)?
+    (?:
+        youtu\.be/(?P<short>[A-Za-z0-9_-]{11})
+      | youtube\.com/
+        (?:
+            watch\?(?:\S*&)?v=(?P<v>[A-Za-z0-9_-]{11})
+          | (?:embed|shorts|live|v)/(?P<path>[A-Za-z0-9_-]{11})
+        )
+    )
+    """)
+
+
+def extract_video_id(url):
+    """Return the 11-character video id for a YouTube URL, or None if invalid."""
+    if not url:
+        return None
+    match = _YOUTUBE_URL_RE.match(url.strip())
+    if not match:
+        return None
+    return match.group("short") or match.group("v") or match.group("path")
+
 
 class YouTubeDownloader:
     def __init__(self, temp_dir=None):
@@ -23,14 +47,14 @@ class YouTubeDownloader:
         self.player_clients = os.getenv(
             "YOUTUBE_PLAYER_CLIENTS", DEFAULT_PLAYER_CLIENTS
         )
+        self.audio_quality = os.getenv("AUDIO_QUALITY", "192")
+        self.debug_mode = os.getenv("DEBUG_MODE", "false").lower() == "true"
 
     def _base_opts(self, **overrides):
         """Build common yt-dlp options (cookies, player clients) plus overrides."""
-        debug_mode = os.getenv("DEBUG_MODE", "false").lower() == "true"
-
         opts = {
-            "quiet": not debug_mode,
-            "no_warnings": not debug_mode,
+            "quiet": not self.debug_mode,
+            "no_warnings": not self.debug_mode,
         }
 
         # Prefer player clients that aren't bot-gated, unless explicitly disabled.
@@ -48,10 +72,11 @@ class YouTubeDownloader:
         opts.update(overrides)
         return opts
 
-    def _extract(self, url, download):
+    def _extract(self, url, download=False, opts=None):
         """Extract info, translating YouTube's misleading errors into clear ones."""
+        opts = opts if opts is not None else self._base_opts()
         try:
-            with yt_dlp.YoutubeDL(self._base_opts()) as ydl:
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 return ydl.extract_info(url, download=download)
         except yt_dlp.utils.DownloadError as error:
             message = str(error).lower()
@@ -70,44 +95,62 @@ class YouTubeDownloader:
                 ) from error
             raise
 
+    def _progress_hook(self, status):
+        """Render a single-line download progress indicator."""
+        if self.debug_mode:
+            return  # yt-dlp prints its own verbose progress in debug mode.
+        if status.get("status") == "downloading":
+            percent = (status.get("_percent_str") or "").strip()
+            speed = (status.get("_speed_str") or "").strip()
+            sys.stdout.write(f"\r  Downloading: {percent} {speed}   ")
+            sys.stdout.flush()
+        elif status.get("status") == "finished":
+            sys.stdout.write("\r  Download complete; converting audio...      \n")
+            sys.stdout.flush()
+
     def download_audio(self, url):
-        """Download audio from YouTube URL and return the path to the audio file."""
-        # First extract info to get the title
-        info = self._extract(url, download=False)
-        title = info.get("title", "video")
-        # Clean filename for safety
-        safe_title = "".join(
-            c for c in title if c.isalnum() or c in (" ", "-", "_")
-        ).rstrip()
+        """Download audio from a YouTube URL.
 
-        # Now download with the sanitized filename
-        output_path = os.path.join(self.temp_dir, f"{safe_title}.%(ext)s")
-        audio_quality = os.getenv("AUDIO_QUALITY", "192")
-
+        Returns a tuple of (audio_file_path, video_info). Files are named by the
+        unique video id so concurrent or repeated downloads never collide, and
+        the real output path is read back from yt-dlp rather than guessed.
+        """
+        output_template = os.path.join(self.temp_dir, "%(id)s.%(ext)s")
         ydl_opts = self._base_opts(
             format="bestaudio/best",
             postprocessors=[
                 {
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "mp3",
-                    "preferredquality": audio_quality,
+                    "preferredquality": self.audio_quality,
                 }
             ],
-            outtmpl=output_path,
+            outtmpl=output_template,
+            progress_hooks=[self._progress_hook],
         )
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            audio_file = os.path.join(self.temp_dir, f"{safe_title}.mp3")
+        info = self._extract(url, download=True, opts=ydl_opts)
 
-            return audio_file, safe_title, info
+        audio_file = None
+        downloads = info.get("requested_downloads")
+        if downloads:
+            audio_file = downloads[0].get("filepath")
+        if not audio_file:
+            audio_file = os.path.join(self.temp_dir, f"{info['id']}.mp3")
+
+        return audio_file, self._video_info(info)
 
     def get_video_info(self, url):
         """Get video metadata without downloading."""
-        info = self._extract(url, download=False)
+        return self._video_info(self._extract(url, download=False))
+
+    @staticmethod
+    def _video_info(info):
+        """Normalize a yt-dlp info dict to the fields the app uses."""
         return {
+            "id": info.get("id"),
             "title": info.get("title", "Unknown"),
-            "duration": info.get("duration", 0),
+            "duration": info.get("duration", 0) or 0,
             "uploader": info.get("uploader", "Unknown"),
             "upload_date": info.get("upload_date", "Unknown"),
         }
